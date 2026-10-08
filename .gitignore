@@ -170,3 +170,7 @@ skyseg.onnx
 
 # VSLAM-LAB install log (BaselineVSLAMLAB.install)
 install_*.txt
+
+# pixi
+.pixi/
+output/

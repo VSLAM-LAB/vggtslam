@@ -1,0 +1,77 @@
+# Conda package definition for vggtslam ([package], built by pixi-build from this repo for releases), plus a
+# development environment ([workspace]) with an editable install (`pixi run install`).
+# Pure Python: one noarch build serves every CUDA version (the CUDA build comes from the pytorch-gpu dependency).
+# Releases are published by CI on vX.Y tags.
+[workspace]
+authors = ["vslamlab <vslamlab@gmail.com>"]
+channels = ["https://prefix.dev/conda-forge"]
+name = "vggtslam"
+platforms = [{ name = "linux-64-cuda129", platform = "linux-64", cuda = "12.9" }]
+version = "0.1.0"
+preview = ["pixi-build"]
+
+########################################################################################################################
+# Package. Release: from a clean checkout of a tagged commit with submodules (CI does this, see
+# .github/workflows/conda-package.yml)
+#   pixi publish --clean --target-dir output
+#   pixi upload prefix --channel vslamlab/vslamlab output/*.conda
+[package]
+name = "vggtslam"
+version = "2.0"
+description = "VGGT-SLAM 2.0: feed-forward dense monocular SLAM optimized on the SL(4) manifold, with VGGT and SALAD"
+authors = ["Dominic Maggio", "Luca Carlone"]
+license = "BSD-2-Clause AND CC-BY-NC-4.0 AND GPL-3.0-only"
+homepage = "https://github.com/MIT-SPARK/VGGT-SLAM"
+repository = "https://github.com/VSLAM-LAB/vggtslam"
+
+[package.build]
+backend = { name = "pixi-build-python", version = "0.*" }
+
+[package.build.config]
+noarch = true
+installer = "pip"
+
+[package.host-dependencies]
+python = "*"
+pip = "*"
+setuptools = "*"
+
+[package.run-dependencies]
+python = ">=3.10"
+pytorch-gpu = "2.7.*"   # same torch as the other VSLAM-LAB baselines (shared in the pixi cache; tested combination)
+torchvision = "*"
+numpy = "*"
+gtsam = ">=4.3"         # SL(4) factors (conda-forge 4.3.0 onwards)
+open3d = ">=0.19,<0.20"  # conda-forge open3d 0.20.0 fails to import with filament 1.77.2 (undefined symbol), 2026-10
+viser = "==0.2.23"      # upstream pin; the viewer API moved in later releases
+opencv = "<5"            # tested with OpenCV 4.13; 5.0 is a new major version
+scipy = "*"
+matplotlib-base = "*"
+termcolor = "*"
+tqdm = "*"
+pandas = "*"
+pyyaml = "*"
+pillow = "*"
+# vggt
+einops = "*"
+safetensors = "*"
+huggingface_hub = "*"
+# salad (loop-closure retrieval: salad.eval imports the validation utilities at module level)
+pytorch-lightning = "*"
+pytorch-metric-learning = "*"
+faiss = "*"
+prettytable = "*"
+
+########################################################################################################################
+# Workspace: development environment with an editable install; Python edits apply immediately. The environment gets
+# the [package] host/run dependencies through [dev] (vggtslam itself is not built).
+[tasks]
+install = "pip install --no-build-isolation --no-deps -e ."
+execute-mono = "vslamlab_vggtslam_mono"
+test = "python -I -c 'import gtsam, vggt.models.vggt, vggt.utils.load_fn, salad.eval, vggt_slam.solver, vggt_slam.loop_closure, vslamlab_vggtslam_mono; from gtsam import SL4, BetweenFactorSL4; import numpy; print(numpy.__version__)' && vslamlab_vggtslam_mono --help > /dev/null && echo OK"
+
+[dev]
+vggtslam = { path = "." }  # installs the [package] host/run dependencies, not vggtslam itself
+
+[dependencies]
+python = "3.11.*"  # like the other VSLAM-LAB environments (conda-forge open3d 0.20 fails to import on 3.14)

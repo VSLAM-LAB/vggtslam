@@ -1,17 +1,15 @@
-from setuptools import setup, find_packages
+from setuptools import setup, find_packages, find_namespace_packages
 
+# Package metadata and the console script live in pyproject.toml. One install covers VGGT-SLAM and its two
+# submodules: vggt (third_party/vggt, MIT-SPARK/VGGT_SPARK; a namespace package without __init__.py files) and
+# salad (third_party/salad; only the salad package, its training-only top-level modules are left out).
 setup(
-    name='vggt_slam',
-    version='2.0.0',
-    description='A feedforward SLAM system optimized on the SL(4) manifold.',
-    author='Dominic Maggio',
-    packages=find_packages(include=['evals', 'evals.*', 'vggt_slam', 'vggt_slam.*']),
-
-    # VSLAM-LAB entry point (Baselines/baseline_files/baseline_vggtslam.py in VSLAM-LAB)
-    py_modules=['vslamlab_vggtslam_mono'],
-    entry_points={
-        'console_scripts': [
-            'vslamlab_vggtslam_mono=vslamlab_vggtslam_mono:main',
-        ],
+    packages=find_packages(include=['evals', 'evals.*', 'vggt_slam', 'vggt_slam.*'])
+        + find_namespace_packages(where='third_party/vggt', include=['vggt', 'vggt.*'])
+        + find_packages(where='third_party/salad', include=['salad', 'salad.*']),
+    package_dir={
+        'vggt': 'third_party/vggt/vggt',
+        'salad': 'third_party/salad/salad',
     },
+    py_modules=['vslamlab_vggtslam_mono'],
 )

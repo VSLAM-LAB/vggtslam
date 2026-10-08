@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vggtslam"
+version = "2.0"
+description = "VGGT-SLAM 2.0: feed-forward dense monocular SLAM optimized on the SL(4) manifold, with VGGT and SALAD"
+readme = "README.md"
+# VGGT-SLAM (BSD-2-Clause) ships VGGT (third_party/vggt, CC BY-NC 4.0) and SALAD (third_party/salad, GPL-3.0)
+license = "BSD-2-Clause AND CC-BY-NC-4.0 AND GPL-3.0-only"
+license-files = ["LICENSE", "third_party/vggt/LICENSE.txt", "third_party/salad/LICENSE"]
+authors = [{ name = "Dominic Maggio" }, { name = "Luca Carlone" }]
+requires-python = ">=3.10"
+
+[project.scripts]
+vslamlab_vggtslam_mono = "vslamlab_vggtslam_mono:main"
+
+[project.urls]
+Homepage = "https://github.com/MIT-SPARK/VGGT-SLAM"
+Repository = "https://github.com/VSLAM-LAB/vggtslam"

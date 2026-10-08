@@ -1,0 +1,106 @@
+# Builds the vggtslam conda package (pure Python: one noarch build, see pixi.toml [package]) on every push to main,
+# and publishes it to https://prefix.dev/vslamlab/vslamlab when a version tag (vX.Y) is pushed.
+# Publishing uses prefix.dev trusted publishing (OIDC): prefix.dev > Settings > Repository Access > GitHub,
+# repository VSLAM-LAB/vggtslam, workflow conda-package.yml, read/write on vslamlab/vslamlab. No API key is stored.
+#
+# Release: bump `version` in pixi.toml and pyproject.toml, push to main, check it on a GPU (VSLAM-LAB vggtslam-dev),
+# then `git tag -a vX.Y -m "vggtslam X.Y" && git push origin vX.Y`.
+name: conda-package
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive  # third_party/vggt (VGGT_SPARK) and third_party/salad are packaged in
+
+      # The test environment (pytorch-gpu, CUDA libraries, open3d) does not fit in the runner's default free space
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
+          df -h /
+
+      - uses: prefix-dev/setup-pixi@v0.11.0
+        with:
+          pixi-version: v0.81.0
+          run-install: false
+
+      - name: Check tag matches package version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          python3 - <<'EOF'
+          import os, sys, tomllib
+          tag = os.environ['GITHUB_REF_NAME'].removeprefix('v')
+          pixi = tomllib.load(open('pixi.toml', 'rb'))['package']['version']
+          pyproject = tomllib.load(open('pyproject.toml', 'rb'))['project']['version']
+          if not tag == pixi == pyproject:
+              sys.exit(f'tag v{tag} does not match pixi.toml [package] version {pixi} / pyproject.toml version {pyproject}')
+          print(f'version {tag} OK')
+          EOF
+
+      # --clean: pixi reuses its build directory otherwise, and stale files end up in the package
+      - name: Build into a local channel
+        run: pixi publish --clean --to "file://$PWD/channel"
+
+      - name: Inspect package
+        run: |
+          shopt -s nullglob
+          pkgs=(channel/noarch/vggtslam-*.conda)
+          [ ${#pkgs[@]} -eq 1 ] || { echo "expected 1 package, found ${#pkgs[@]}"; exit 1; }
+          tmp=$(mktemp -d)
+          unzip -q "${pkgs[0]}" -d "$tmp"
+          files=$(tar --zstd -tf "$tmp"/pkg-*.tar.zst)
+          for f in site-packages/vslamlab_vggtslam_mono.py site-packages/vggt_slam/solver.py \
+                   site-packages/vggt/models/vggt.py site-packages/salad/eval.py; do
+            grep -qx "$f" <<< "$files" || { echo "missing $f"; exit 1; }
+          done
+          n=$(grep -c 'dist-info/METADATA$' <<< "$files")
+          [ "$n" -eq 1 ] || { echo "expected 1 dist-info, found $n"; exit 1; }
+          tar --zstd -xOf "$tmp"/info-*.tar.zst info/link.json | grep -q 'vslamlab_vggtslam_mono = vslamlab_vggtslam_mono:main' \
+            || { echo "entry point missing from info/link.json"; exit 1; }
+
+      # No GPU on the runner: CONDA_OVERRIDE_CUDA lets the solver accept the CUDA packages; imports and --help only
+      - name: Test
+        run: |
+          CONDA_OVERRIDE_CUDA=12.9 pixi exec \
+            -c "file://$PWD/channel" -c https://prefix.dev/conda-forge \
+            -s vggtslam -s python=3.11 -- \
+            bash -c "python -I -c 'import gtsam, vggt.models.vggt, vggt.utils.load_fn, salad.eval, vggt_slam.solver, vggt_slam.loop_closure, vslamlab_vggtslam_mono; from gtsam import SL4, BetweenFactorSL4; print(\"imports OK\")' \
+                     && vslamlab_vggtslam_mono --help > /dev/null && echo OK"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: vggtslam-packages
+          path: channel/noarch/vggtslam-*.conda
+
+  publish:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write  # trusted publishing to prefix.dev
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: vggtslam-packages
+          path: packages
+
+      - uses: prefix-dev/setup-pixi@v0.11.0
+        with:
+          pixi-version: v0.81.0
+          run-install: false
+
+      # --skip-existing: a re-run after a partial upload never overwrites a published file
+      - name: Upload to prefix.dev
+        run: pixi exec rattler-build upload prefix --skip-existing --channel vslamlab/vslamlab packages/*.conda
